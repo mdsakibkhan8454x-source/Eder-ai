@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Eder AI - Personal Voice Agent</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Inter & Hind Siliguri for clean Bengali/English -->
+    <link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Inter', 'Hind Siliguri', sans-serif;
+            background-color: #090d16;
+            color: #f8fafc;
+        }
+        /* ভয়েস অর্ব অ্যানিমেশন */
+        @keyframes pulse-ring {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(6, 182, 212, 0.7); }
+            70% { transform: scale(1.05); box-shadow: 0 0 0 24px rgba(6, 182, 212, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(6, 182, 212, 0); }
+        }
+        @keyframes pulse-awake {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.8); }
+            70% { transform: scale(1.08); box-shadow: 0 0 0 30px rgba(16, 185, 129, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        }
+        .orb-listening {
+            animation: pulse-ring 2s infinite;
+        }
+        .orb-awake {
+            animation: pulse-awake 1.2s infinite;
+        }
+        /* কাস্টম স্ক্রলবার */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 9999px; }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between selection:bg-cyan-500 selection:text-white">
+
+    <!-- টোস্ট নোটিফিকেশন (alert এর বদলে) -->
+    <div id="toast" class="fixed top-4 left-1/2 -translate-x-1/2 z-50 hidden px-5 py-3 rounded-2xl shadow-2xl border border-slate-700 bg-slate-800/95 backdrop-blur text-sm font-medium transition-all duration-300 flex items-center gap-2">
+        <i id="toast-icon" class="fa-solid fa-circle-info text-cyan-400"></i>
+        <span id="toast-msg"></span>
+    </div>
+
+    <!-- হেডার -->
+    <header class="w-full max-w-2xl mx-auto px-4 pt-5 pb-3 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
+                <i class="fa-solid fa-robot text-white text-lg"></i>
+            </div>
+            <div>
+                <h1 class="text-xl font-bold tracking-tight text-white">Eder <span class="text-cyan-400 text-sm font-medium">AI Agent</span></h1>
+                <div class="flex items-center gap-1.5">
+                    <span id="status-dot" class="w-2 h-2 rounded-full bg-slate-500"></span>
+                    <span id="status-text" class="text-xs text-slate-400">অপেক্ষমাণ (Tap Mic)</span>
+                </div>
+            </div>
+        </div>
+
+        <button onclick="openSettings()" class="p-3 rounded-2xl bg-slate-800/80 hover:bg-slate-700 border border-slate-700/60 text-slate-300 transition active:scale-95" title="Gemini API Settings">
+            <i class="fa-solid fa-gear text-lg"></i>
+        </button>
+    </header>
+
+    <!-- মূল কন্টেন্ট -->
+    <main class="flex-1 w-full max-w-2xl mx-auto px-4 py-4 flex flex-col gap-5">
+
+        <!-- ভয়েস অর্ব সেকশন -->
+        <section class="bg-slate-900/70 border border-slate-800 rounded-3xl p-6 flex flex-col items-center text-center shadow-xl">
+            <button id="mic-orb" onclick="toggleListening()" class="w-28 h-28 rounded-full bg-gradient-to-tr from-slate-800 to-slate-700 border-2 border-slate-600 flex items-center justify-center text-3xl text-slate-300 shadow-2xl transition-all duration-300 hover:scale-105 active:scale-95 mb-5">
+                <i id="mic-icon" class="fa-solid fa-microphone"></i>
+            </button>
+
+            <h2 id="orb-title" class="text-lg font-semibold text-white mb-1">মাইক্রোফোন চালু করতে ট্যাপ করুন</h2>
+            <p id="orb-subtitle" class="text-xs text-slate-400 max-w-xs">
+                চালু করার পর বলুন <span class="text-cyan-400 font-semibold">"Hey Eder"</span>, তারপর আপনার কমান্ড দিন (কল, হোয়াটসঅ্যাপ, মেসেঞ্জার, ইমো বা নোট)।
+            </p>
+
+            <!-- লাইভ ট্রান্সক্রিপ্ট ও AI রিপ্লাই -->
+            <div class="w-full mt-5 space-y-2 text-left">
+                <div id="user-transcript-box" class="hidden bg-slate-800/60 border border-slate-700/50 rounded-2xl p-3 text-sm">
+                    <span class="text-xs font-semibold text-cyan-400 block mb-0.5">আপনি বলেছেন:</span>
+                    <p id="user-transcript" class="text-slate-200"></p>
+                </div>
+                <div id="ai-reply-box" class="hidden bg-emerald-950/30 border border-emerald-800/40 rounded-2xl p-3 text-sm">
+                    <span class="text-xs font-semibold text-emerald-400 block mb-0.5">Eder:</span>
+                    <p id="ai-reply" class="text-slate-200"></p>
+                </div>
+            </div>
+        </section>
+
+        <!-- টেক্সট কমান্ড ইনপুট (মাইক ছাড়াও ব্যবহার করার জন্য) -->
+        <form onsubmit="handleTextSubmit(event)" class="flex gap-2">
+            <input id="text-command-input" type="text" placeholder="লিখে কমান্ড দিন (যেমন: রহিমকে কল দাও)..." class="flex-1 bg-slate-900 border border-slate-800 focus:border-cyan-500 rounded-2xl px-4 py-3 text-sm text-white placeholder-slate-500 outline-none transition">
+            <button type="submit" class="px-5 py-3 rounded-2xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-semibold text-sm transition active:scale-95 flex items-center gap-2">
+                <i class="fa-solid fa-paper-plane"></i>
+            </button>
+        </form>
+
+        <!-- কুইক কমান্ড উদাহরণ -->
+        <section class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            <button onclick="runQuickCommand('01700000000 নম্বরে হোয়াটসঅ্যাপে মেসেজ দাও কেমন আছো')" class="p-3 rounded-2xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-left transition active:scale-95">
+                <i class="fa-brands fa-whatsapp text-emerald-400 text-lg mb-1 block"></i>
+                <span class="text-xs font-medium text-slate-300 block">WhatsApp</span>
+            </button>
+            <button onclick="runQuickCommand('মেসেঞ্জারে মেসেজ দাও হাই')" class="p-3 rounded-2xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-left transition active:scale-95">
+                <i class="fa-brands fa-facebook-messenger text-blue-400 text-lg mb-1 block"></i>
+                <span class="text-xs font-medium text-slate-300 block">Messenger</span>
+            </button>
+            <button onclick="runQuickCommand('01700000000 নম্বরে কল দাও')" class="p-3 rounded-2xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-left transition active:scale-95">
+                <i class="fa-solid fa-phone text-cyan-400 text-lg mb-1 block"></i>
+                <span class="text-xs font-medium text-slate-300 block">Phone Call</span>
+            </button>
+            <button onclick="runQuickCommand('একটা নোট বানাও আজকে বিকেলে মিটিং আছে')" class="p-3 rounded-2xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-left transition active:scale-95">
+                <i class="fa-solid fa-note-sticky text-amber-400 text-lg mb-1 block"></i>
+                <span class="text-xs font-medium text-slate-300 block">Save Note</span>
+            </button>
+        </section>
+
+        <!-- সেভ করা নোটস -->
+        <section class="bg-slate-900/70 border border-slate-800 rounded-3xl p-4">
+            <div class="flex items-center justify-between mb-3">
+                <h3 class="text-sm font-semibold text-slate-200 flex items-center gap-2">
+                    <i class="fa-solid fa-note-sticky text-amber-400"></i> আপনার নোটস
+                </h3>
+                <button onclick="clearAllNotes()" class="text-xs text-rose-400 hover:text-rose-300 transition">সব মুছুন</button>
+            </div>
+            <div id="notes-container" class="space-y-2 max-h-48 overflow-y-auto pr-1">
+                <!-- নোটস এখানে রেন্ডার হবে -->
+            </div>
+        </section>
+
+    </main>
+
+    <!-- পারমিশন রিকোয়েস্ট ওয়েলকাম মোডাল (অ্যাপে ঢোকার সাথে সাথে আসবে) -->
+    <div id="permission-modal" class="fixed inset-0 z-50 hidden bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4">
+        <div class="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl text-center">
+            <div class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/30">
+                <i class="fa-solid fa-shield-halved text-white text-2xl"></i>
+            </div>
+            <h3 class="text-xl font-bold text-white mb-2">Eder AI-তে স্বাগতম!</h3>
+            <p class="text-xs text-slate-400 mb-5 leading-relaxed">
+                সঠিকভাবে ভয়েস কমান্ড শোনা এবং ব্যাকগ্রাউন্ডে কাজ করার জন্য নিচের পারমিশনগুলো প্রয়োজন:
+            </p>
+
+            <div class="space-y-2.5 text-left mb-6">
+                <div class="flex items-center justify-between bg-slate-950/80 border border-slate-800/80 rounded-2xl p-3">
+                    <div class="flex items-center gap-3">
+                        <i class="fa-solid fa-microphone text-cyan-400"></i>
+                        <div>
+                            <p class="text-xs font-semibold text-slate-200">মাইক্রোফোন (Microphone)</p>
+                            <p class="text-[10px] text-slate-500">"Hey Eder" ও কমান্ড শোনার জন্য</p>
+                        </div>
+                    </div>
+                    <span id="perm-mic-status" class="text-[11px] font-medium text-amber-400">অপেক্ষমাণ</span>
+                </div>
+
+                <div class="flex items-center justify-between bg-slate-950/80 border border-slate-800/80 rounded-2xl p-3">
+                    <div class="flex items-center gap-3">
+                        <i class="fa-solid fa-bell text-emerald-400"></i>
+                        <div>
+                            <p class="text-xs font-semibold text-slate-200">নোটিফিকেশন (Notifications)</p>
+                            <p class="text-[10px] text-slate-500">ব্যাকগ্রাউন্ড অ্যালার্ট ও স্ট্যাটাসের জন্য</p>
+                        </div>
+                    </div>
+                    <span id="perm-notif-status" class="text-[11px] font-medium text-amber-400">অপেক্ষমাণ</span>
+                </div>
+
+                <div class="flex items-center justify-between bg-slate-950/80 border border-slate-800/80 rounded-2xl p-3">
+                    <div class="flex items-center gap-3">
+                        <i class="fa-solid fa-mobile-screen text-purple-400"></i>
+                        <div>
+                            <p class="text-xs font-semibold text-slate-200">স্ক্রিন ওয়েক-লক (Always Active)</p>
+                            <p class="text-[10px] text-slate-500">স্ক্রিন বন্ধ না হয়ে সচল রাখার জন্য</p>
+                        </div>
+                    </div>
+                    <span id="perm-wake-status" class="text-[11px] font-medium text-amber-400">অপেক্ষমাণ</span>
+                </div>
+            </div>
+
+            <button id="grant-all-btn" onclick="requestAllPermissions()" class="w-full py-3.5 rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold text-sm shadow-lg shadow-cyan-500/25 transition active:scale-95 mb-2.5">
+                সব পারমিশন দিন ও শুরু করুন
+            </button>
+            <button onclick="dismissPermissionModal()" class="w-full py-2 text-xs text-slate-500 hover:text-slate-300 transition">
+                পরে সেট করব
+            </button>
+        </div>
+    </div>
+
+    <!-- সেটিংস মোডাল (Gemini API Key) -->
+    <div id="settings-modal" class="fixed inset-0 z-50 hidden bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-bold text-white">Eder সেটিংস</h3>
+                <button onclick="closeSettings()" class="p-2 text-slate-400 hover:text-white rounded-xl">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs font-medium text-slate-400 mb-1.5">Gemini API Key</label>
+                    <input id="api-key-input" type="password" placeholder="AIzaSy..." class="w-full bg-slate-950 border border-slate-800 focus:border-cyan-500 rounded-2xl px-4 py-3 text-sm text-white outline-none">
+                    <p class="text-[11px] text-slate-500 mt-1.5">আপনার কী শুধুমাত্র আপনার ব্রাউজারে (LocalStorage) সেভ থাকবে।</p>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium text-slate-400 mb-1.5">ভয়েস ভাষা (Speech Language)</label>
+                    <select id="lang-select" class="w-full bg-slate-950 border border-slate-800 rounded-2xl px-4 py-3 text-sm text-white outline-none">
+                        <option value="bn-BD">বাংলা (Bangladesh)</option>
+                        <option value="en-US">English (US)</option>
+                    </select>
+                </div>
+
+                <button onclick="saveSettings()" class="w-full py-3 rounded-2xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-sm transition active:scale-95">
+                    সেভ করুন
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ====================================================================
+        // ১. স্টেট ও কনফিগারেশন
+        // ====================================================================
+        let isListening = false;
+        let isAwake = false;
+        let recognition = null;
+        let wakeLock = null;
+        let isProcessing = false;
+
+        const STORAGE_KEY_API = 'eder_gemini_api_key';
+        const STORAGE_KEY_LANG = 'eder_voice_lang';
+        const STORAGE_KEY_NOTES = 'eder_saved_notes';
+        const STORAGE_KEY_PERM_DONE = 'eder_permissions_requested';
+
+        // পেজ লোড হলে নোটস, সেটিংস ও পারমিশন চেক করা
+        window.onload = () => {
+            renderNotes();
+            initSpeechRecognition();
+            checkInitialPermissions();
+        };
+
+        // ====================================================================
+        // ১.৫ অটোমেটিক পারমিশন চেক ও রিকোয়েস্ট সিস্টেম
+        // ====================================================================
+        async function checkInitialPermissions() {
+            const modal = document.getElementById('permission-modal');
+            let micGranted = false;
+
+            if (navigator.permissions && navigator.permissions.query) {
+                try {
+                    const micPerm = await navigator.permissions.query({ name: 'microphone' });
+                    if (micPerm.state === 'granted') {
+                        micGranted = true;
+                        document.getElementById('perm-mic-status').textContent = 'অনুমোদিত ✓';
+                        document.getElementById('perm-mic-status').className = 'text-[11px] font-medium text-emerald-400';
+                    }
+                } catch (e) {}
+            }
+
+            if ('Notification' in window && Notification.permission === 'granted') {
+                document.getElementById('perm-notif-status').textContent = 'অনুমোদিত ✓';
+                document.getElementById('perm-notif-status').className = 'text-[11px] font-medium text-emerald-400';
+            }
+
+            // প্রথমবার ঢুকলে বা মাইক্রোফোন পারমিশন না থাকলে মোডাল দেখাবে
+            if (!micGranted || !localStorage.getItem(STORAGE_KEY_PERM_DONE)) {
+                modal.classList.remove('hidden');
+            } else {
+                // আগে থেকেই পারমিশন থাকলে সরাসরি লিসেনিং চালু করা
+                startListeningAutomatically();
+            }
+        }
+
+        async function requestAllPermissions() {
+            const btn = document.getElementById('grant-all-btn');
+            btn.textContent = 'পারমিশন নেওয়া হচ্ছে...';
+            btn.disabled = true;
+
+            // ১. মাইক্রোফোন পারমিশন চাওয়া
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                stream.getTracks().forEach(track => track.stop()); // শুধু পারমিশন নিয়ে স্ট্রিম বন্ধ করা
+                document.getElementById('perm-mic-status').textContent = 'অনুমোদিত ✓';
+                document.getElementById('perm-mic-status').className = 'text-[11px] font-medium text-emerald-400';
+            } catch (err) {
+                document.getElementById('perm-mic-status').textContent = 'বাতিল ✕';
+                document.getElementById('perm-mic-status').className = 'text-[11px] font-medium text-rose-400';
+                showToast('মাইক্রোফোন পারমিশন ব্লক করা আছে। ব্রাউজার সেটিংস থেকে অন করুন।', 'error');
+            }
+
+            // ২. নোটিফিকেশন পারমিশন চাওয়া
+            if ('Notification' in window) {
+                try {
+                    const notifResult = await Notification.requestPermission();
+                    if (notifResult === 'granted') {
+                        document.getElementById('perm-notif-status').textContent = 'অনুমোদিত ✓';
+                        document.getElementById('perm-notif-status').className = 'text-[11px] font-medium text-emerald-400';
+                    } else {
+                        document.getElementById('perm-notif-status').textContent = 'বাতিল ✕';
+                        document.getElementById('perm-notif-status').className = 'text-[11px] font-medium text-rose-400';
+                    }
+                } catch (e) {}
+            }
+
+            // ৩. স্ক্রিন ওয়েক-লক চালু করা
+            await requestWakeLock();
+            if (wakeLock) {
+                document.getElementById('perm-wake-status').textContent = 'সক্রিয় ✓';
+                document.getElementById('perm-wake-status').className = 'text-[11px] font-medium text-emerald-400';
+            } else {
+                document.getElementById('perm-wake-status').textContent = 'প্রস্তুত ✓';
+                document.getElementById('perm-wake-status').className = 'text-[11px] font-medium text-cyan-400';
+            }
+
+            localStorage.setItem(STORAGE_KEY_PERM_DONE, 'true');
+
+            setTimeout(() => {
+                dismissPermissionModal();
+                startListeningAutomatically();
+                showToast('সব পারমিশন সেট হয়েছে! বলুন "Hey Eder"', 'success');
+            }, 800);
+        }
+
+        function dismissPermissionModal() {
+            document.getElementById('permission-modal').classList.add('hidden');
+            const btn = document.getElementById('grant-all-btn');
+            btn.textContent = 'সব পারমিশন দিন ও শুরু করুন';
+            btn.disabled = false;
+        }
+
+        function startListeningAutomatically() {
+            if (recognition && !isListening) {
+                isListening = true;
+                isAwake = false;
+                recognition.lang = localStorage.getItem(STORAGE_KEY_LANG) || 'bn-BD';
+                try {
+                    recognition.start();
+                    requestWakeLock();
+                    updateUIState('listening');
+                } catch (e) {}
+            }
+        }
+
+        // ====================================================================
+        // ২. টোস্ট নোটিফিকেশন সিস্টেম (No alert/confirm)
+        // ====================================================================
+        let toastTimeout;
+        function showToast(message, type = 'info') {
+            const toast = document.getElementById('toast');
+            const msgEl = document.getElementById('toast-msg');
+            const iconEl = document.getElementById('toast-icon');
+
+            msgEl.textContent = message;
+            iconEl.className = type === 'error'
+                ? 'fa-solid fa-triangle-exclamation text-rose-400'
+                : type === 'success'
+                ? 'fa-solid fa-circle-check text-emerald-400'
+                : 'fa-solid fa-circle-info text-cyan-400';
+
+            toast.classList.remove('hidden');
+            clearTimeout(toastTimeout);
+            toastTimeout = setTimeout(() => {
+                toast.classList.add('hidden');
+            }, 3500);
+        }
+
+        // ====================================================================
+        // ৩. ওয়েক লক (স্ক্রিন অন রাখার জন্য যাতে ব্যাকগ্রাউন্ডে শুনতে পারে)
+        // ====================================================================
+        async function requestWakeLock() {
+            if ('wakeLock' in navigator) {
+                try {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                } catch (err) {
+                    // ব্রাউজার পারমিশন না দিলে চুপচাপ স্কিপ করবে
+                }
+            }
+        }
+
+        function releaseWakeLock() {
+            if (wakeLock !== null) {
+                wakeLock.release().then(() => { wakeLock = null; });
+            }
+        }
+
+        // ====================================================================
+        // ৪. স্পিচ রিকগনিশন (Web Speech API)
+        // ====================================================================
+        function initSpeechRecognition() {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SpeechRecognition) {
+                showToast('আপনার ব্রাউজারে ভয়েস রিকগনিশন সাপোর্ট করে না। টেক্সট বক্স ব্যবহার করুন।', 'error');
+                return;
+            }
+
+            recognition = new SpeechRecognition();
+            recognition.continuous = false; // মোবাইল ব্রাউজারে স্টেবল রাখার জন্য false দিয়ে অটো-রিস্টার্ট করা হয়
+            recognition.interimResults = false;
+            recognition.lang = localStorage.getItem(STORAGE_KEY_LANG) || 'bn-BD';
+
+            recognition.onresult = (event) => {
+                const transcript = event.results[0][0].transcript.trim();
+                handleVoiceInput(transcript);
+            };
+
+            recognition.onerror = (event) => {
+                if (event.error === 'not-allowed') {
+                    isListening = false;
+                    updateUIState('idle');
+                    showToast('মাইক্রোফোন পারমিশন দেওয়া হয়নি।', 'error');
+                }
+            };
+
+            recognition.onend = () => {
+                // যদি ইউজার বন্ধ না করে থাকে, তবে আবার শোনা শুরু করবে
+                if (isListening && !isProcessing) {
+                    setTimeout(() => {
+                        try {
+                            if (isListening) recognition.start();
+                        } catch (e) {
+                            // Already started এরর এড়ানো
+                        }
+                    }, 300);
+                }
+            };
+        }
+
+        function toggleListening() {
+            if (!recognition) {
+                showToast('ভয়েস সাপোর্ট নেই, নিচে লিখে কমান্ড দিন।', 'error');
+                return;
+            }
+
+            if (isListening) {
+                isListening = false;
+                isAwake = false;
+                try { recognition.stop(); } catch (e) {}
+                releaseWakeLock();
+                updateUIState('idle');
+            } else {
+                isListening = true;
+                isAwake = false;
+                recognition.lang = localStorage.getItem(STORAGE_KEY_LANG) || 'bn-BD';
+                try {
+                    recognition.start();
+                    requestWakeLock();
+                    updateUIState('listening');
+                } catch (e) {
+                    showToast('মাইক্রোফোন চালু করতে সমস্যা হয়েছে।', 'error');
+                }
+            }
+        }
+
+        function updateUIState(state) {
+            const orb = document.getElementById('mic-orb');
+            const dot = document.getElementById('status-dot');
+            const statusText = document.getElementById('status-text');
+            const orbTitle = document.getElementById('orb-title');
+
+            orb.className = 'w-28 h-28 rounded-full flex items-center justify-center text-3xl shadow-2xl transition-all duration-300 hover:scale-105 active:scale-95 mb-5 border-2 ';
+
+            if (state === 'idle') {
+                orb.className += 'bg-gradient-to-tr from-slate-800 to-slate-700 border-slate-600 text-slate-300';
+                dot.className = 'w-2 h-2 rounded-full bg-slate-500';
+                statusText.textContent = 'অপেক্ষমাণ (Tap Mic)';
+                orbTitle.textContent = 'মাইক্রোফোন চালু করতে ট্যাপ করুন';
+            } else if (state === 'listening') {
+                orb.className += 'bg-gradient-to-tr from-cyan-600 to-blue-600 border-cyan-400 text-white orb-listening';
+                dot.className = 'w-2 h-2 rounded-full bg-cyan-400 animate-ping';
+                statusText.textContent = 'শুনছি... বলুন "Hey Eder"';
+                orbTitle.textContent = 'বলুন "Hey Eder"';
+            } else if (state === 'awake') {
+                orb.className += 'bg-gradient-to-tr from-emerald-500 to-teal-600 border-emerald-300 text-white orb-awake';
+                dot.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse';
+                statusText.textContent = 'সক্রিয়! আপনার কমান্ড দিন...';
+                orbTitle.textContent = 'আমি শুনছি, বলুন...';
+            } else if (state === 'processing') {
+                orb.className += 'bg-gradient-to-tr from-amber-500 to-orange-600 border-amber-300 text-white';
+                dot.className = 'w-2 h-2 rounded-full bg-amber-400 animate-pulse';
+                statusText.textContent = 'প্রসেসিং হচ্ছে...';
+                orbTitle.textContent = 'অপেক্ষা করুন...';
+            }
+        }
+
+        // ====================================================================
+        // ৫. ভয়েস ও টেক্সট কমান্ড প্রসেসিং
+        // ====================================================================
+        function handleVoiceInput(text) {
+            const lower = text.toLowerCase();
+
+            // ওয়েক-ওয়ার্ড চেক ("Hey Eder")
+            if (!isAwake) {
+                if (lower.includes('hey eder') || lower.includes('eder') || lower.includes('এডার') || lower.includes('হে এডার')) {
+                    isAwake = true;
+                    updateUIState('awake');
+                    speak('হ্যাঁ, আমি শুনছি। বলুন কী করতে হবে?');
+                }
+                return;
+            }
+
+            // ইউজার কমান্ড দিয়েছে
+            isAwake = false;
+            processCommand(text);
+        }
+
+        function handleTextSubmit(event) {
+            event.preventDefault();
+            const input = document.getElementById('text-command-input');
+            const text = input.value.trim();
+            if (!text) return;
+            input.value = '';
+            processCommand(text);
+        }
+
+        function runQuickCommand(cmd) {
+            processCommand(cmd);
+        }
+
+        async function processCommand(commandText) {
+            isProcessing = true;
+            updateUIState('processing');
+
+            // UI তে ইউজারের কথা দেখানো
+            document.getElementById('user-transcript-box').classList.remove('hidden');
+            document.getElementById('user-transcript').textContent = commandText;
+
+            const actionData = await askGeminiWithBackoff(commandText);
+
+            // UI তে AI রিপ্লাই দেখানো
+            document.getElementById('ai-reply-box').classList.remove('hidden');
+            document.getElementById('ai-reply').textContent = actionData.reply || 'কাজটি করা হচ্ছে।';
+
+            speak(actionData.reply || 'কাজটি করা হচ্ছে।');
+            executeAction(actionData);
+
+            isProcessing = false;
+            if (isListening) {
+                updateUIState('listening');
+                try { recognition.start(); } catch (e) {}
+            } else {
+                updateUIState('idle');
+            }
+        }
+
+        // ====================================================================
+        // ৬. GEMINI API INTEGRATION (Exponential Backoff সহ)
+        // ====================================================================
+        async function askGeminiWithBackoff(userCommand) {
+            const apiKey = localStorage.getItem(STORAGE_KEY_API) || "";
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+
+            const systemPrompt = `You are 'Eder', a helpful Bengali & English Android/Web AI Assistant.
+Analyze the user's command and return a JSON object with the exact action to take.
+Actions:
+- "WHATSAPP": Send WhatsApp message. Extract "target" (phone number) and "message".
+- "MESSENGER": Open Facebook Messenger. Extract "message".
+- "IMO": Open imo. Extract "message".
+- "CALL": Make a phone call. Extract "target" (phone number).
+- "NOTE": Save a note. Extract "content".
+- "SPEAK": General conversation or answer.
+Always provide a short, natural "reply" in Bengali.`;
+
+            const payload = {
+                contents: [{ parts: [{ text: userCommand }] }],
+                systemInstruction: { parts: [{ text: systemPrompt }] },
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: "OBJECT",
+                        properties: {
+                            action: { type: "STRING", enum: ["WHATSAPP", "MESSENGER", "IMO", "CALL", "NOTE", "SPEAK"] },
+                            target: { type: "STRING" },
+                            message: { type: "STRING" },
+                            content: { type: "STRING" },
+                            reply: { type: "STRING" }
+                        },
+                        required: ["action", "reply"]
+                    }
+                }
+            };
+
+            const delays = [1000, 2000, 4000];
+            for (let i = 0; i <= delays.length; i++) {
+                try {
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) {
+                        if (response.status === 400 || response.status === 403) {
+                            return {
+                                action: "SPEAK",
+                                reply: "আপনার Gemini API Key সঠিক নয়। দয়া করে সেটিংস থেকে সঠিক কী দিন।"
+                            };
+                        }
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+
+                    const result = await response.json();
+                    const text = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (text) {
+                        return JSON.parse(text);
+                    }
+                } catch (err) {
+                    if (i === delays.length) {
+                        return {
+                            action: "SPEAK",
+                            reply: "দুঃখিত, ইন্টারনেট বা এপিআই সংযোগে সমস্যা হচ্ছে। সেটিংস চেক করুন।"
+                        };
+                    }
+                    await new Promise(res => setTimeout(res, delays[i]));
+                }
+            }
+        }
+
+        // ====================================================================
+        // ৭. অ্যাকশন এক্সিকিউটর (Call, WhatsApp, Messenger, imo, Note)
+        // ====================================================================
+        function executeAction(data) {
+            const { action, target, message, content } = data;
+
+            switch (action) {
+                case 'CALL':
+                    const cleanPhone = (target || '').replace(/[^0-9+]/g, '');
+                    if (cleanPhone) {
+                        window.location.href = `tel:${cleanPhone}`;
+                    } else {
+                        showToast('সঠিক ফোন নম্বর পাওয়া যায়নি।', 'error');
+                    }
+                    break;
+
+                case 'WHATSAPP':
+                    const waPhone = (target || '').replace(/[^0-9]/g, '');
+                    const waText = encodeURIComponent(message || '');
+                    const waUrl = waPhone
+                        ? `https://wa.me/${waPhone}?text=${waText}`
+                        : `https://wa.me/?text=${waText}`;
+                    window.open(waUrl, '_blank');
+                    break;
+
+                case 'MESSENGER':
+                    if (message) copyToClipboard(message);
+                    showToast('মেসেজ কপি করা হয়েছে! মেসেঞ্জার ওপেন হচ্ছে...', 'success');
+                    window.open('https://m.me/', '_blank');
+                    break;
+
+                case 'IMO':
+                    if (message) copyToClipboard(message);
+                    showToast('মেসেজ কপি করা হয়েছে! ইমো ওপেন করুন।', 'success');
+                    window.location.href = 'imo://';
+                    break;
+
+                case 'NOTE':
+                    if (content) {
+                        saveNote(content);
+                        showToast('নোট সেভ করা হয়েছে!', 'success');
+                    }
+                    break;
+            }
+        }
+
+        // ====================================================================
+        // ৮. টেক্সট-টু-স্পিচ (TTS) ও ক্লিপবোর্ড
+        // ====================================================================
+        function speak(text) {
+            if (!('speechSynthesis' in window)) return;
+            window.speechSynthesis.cancel();
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = localStorage.getItem(STORAGE_KEY_LANG) || 'bn-BD';
+            utterance.rate = 1.0;
+            window.speechSynthesis.speak(utterance);
+        }
+
+        function copyToClipboard(text) {
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            document.body.appendChild(textarea);
+            textarea.select();
+            try {
+                document.execCommand('copy');
+            } catch (err) {}
+            document.body.removeChild(textarea);
+        }
+
+        // ====================================================================
+        // ৯. নোটস ম্যানেজার (LocalStorage)
+        // ====================================================================
+        function getNotes() {
+            try {
+                return JSON.parse(localStorage.getItem(STORAGE_KEY_NOTES) || '[]');
+            } catch {
+                return [];
+            }
+        }
+
+        function saveNote(content) {
+            const notes = getNotes();
+            notes.unshift({
+                id: Date.now(),
+                text: content,
+                time: new Date().toLocaleString('bn-BD', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })
+            });
+            localStorage.setItem(STORAGE_KEY_NOTES, JSON.stringify(notes));
+            renderNotes();
+        }
+
+        function deleteNote(id) {
+            const notes = getNotes().filter(n => n.id !== id);
+            localStorage.setItem(STORAGE_KEY_NOTES, JSON.stringify(notes));
+            renderNotes();
+        }
+
+        function clearAllNotes() {
+            localStorage.removeItem(STORAGE_KEY_NOTES);
+            renderNotes();
+            showToast('সব নোট মুছে ফেলা হয়েছে।', 'info');
+        }
+
+        function renderNotes() {
+            const container = document.getElementById('notes-container');
+            const notes = getNotes();
+
+            if (notes.length === 0) {
+                container.innerHTML = `<p class="text-xs text-slate-500 text-center py-4">কোনো নোট সেভ করা নেই। বলুন "একটা নোট বানাও..."</p>`;
+                return;
+            }
+
+            container.innerHTML = notes.map(note => `
+                <div class="flex items-start justify-between gap-3 bg-slate-950/60 border border-slate-800/80 rounded-2xl p-3">
+                    <div>
+                        <p class="text-sm text-slate-200">${escapeHtml(note.text)}</p>
+                        <span class="text-[10px] text-slate-500">${note.time}</span>
+                    </div>
+                    <button onclick="deleteNote(${note.id})" class="text-slate-500 hover:text-rose-400 p-1 transition">
+                        <i class="fa-solid fa-trash-can text-xs"></i>
+                    </button>
+                </div>
+            `).join('');
+        }
+
+        function escapeHtml(str) {
+            return str.replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+        }
+
+        // ====================================================================
+        // ১০. সেটিংস মোডাল কন্ট্রোল
+        // ====================================================================
+        function openSettings() {
+            document.getElementById('api-key-input').value = localStorage.getItem(STORAGE_KEY_API) || '';
+            document.getElementById('lang-select').value = localStorage.getItem(STORAGE_KEY_LANG) || 'bn-BD';
+            document.getElementById('settings-modal').classList.remove('hidden');
+        }
+
+        function closeSettings() {
+            document.getElementById('settings-modal').classList.add('hidden');
+        }
+
+        function saveSettings() {
+            const key = document.getElementById('api-key-input').value.trim();
+            const lang = document.getElementById('lang-select').value;
+            localStorage.setItem(STORAGE_KEY_API, key);
+            localStorage.setItem(STORAGE_KEY_LANG, lang);
+            if (recognition) recognition.lang = lang;
+            closeSettings();
+            showToast('সেটিংস সেভ করা হয়েছে!', 'success');
+        }
+    </script>
+</body>
+</html>
